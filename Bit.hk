@@ -2,14 +2,23 @@
 -> name        => libseccomp
 -> version     => 0.1.0
 -> description => Native, pure-H# seccomp-bpf sandboxing (no libseccomp.so, no shims)
--> author      => Bytes Developers
+-> authors     => ["Bit Developers"]
 -> license     => MIT
+-> lang        => h#
+
+[layout]
+-> src => src
 
 [build]
--> lang   => h#
--> entry  => src/lib.h#
--> output => build/liblibseccomp
--> emit   => lib
+-> link => static
 
-[deps]
--> libc => dynamic
+[lib]
+-> output => hlib
+
+[default-build]
+-> profile => release
+
+[dependencies]
+
+[system-dependencies]
+-> libc => *
