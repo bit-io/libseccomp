@@ -18,7 +18,7 @@ end
 ;;        classic BPF's 255-instruction max-jump limit. This also means
 ;;        it never needs `ir.h#`'s general jump-patching machinery.
 ;;   last: return default_action
-pub fn build_program(rules: [Rule], default_action: int, arch: int) -> [int] is
+pub fn build_program(rules: [rules::Rule], default_action: int, arch: int) -> [int] is
     let mut prog: [int] = []
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH))
     prog.push(pack_instr(OP_JEQ_K,    1, 0, arch))
@@ -26,7 +26,7 @@ pub fn build_program(rules: [Rule], default_action: int, arch: int) -> [int] is
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_NR))
     let mut i: int = 0
     while i < rules.len() is
-        let r: Rule = rules[i]
+        let r: rules::Rule = rules[i]
         prog.push(pack_instr(OP_JEQ_K, 0, 1, r.nr))
         prog.push(pack_instr(OP_RET_K, 0, 0, r.action))
         i += 1
@@ -42,7 +42,7 @@ end
 ;; through both its native ABI and a 32-bit compat ABI (or x86_64 +
 ;; x32) and needs one filter valid for both, the way libseccomp's
 ;; multi-arch filters work.
-pub fn build_program_multi_arch(rules: [Rule], default_action: int, arches: [int]) -> [int] is
+pub fn build_program_multi_arch(rules: [rules::Rule], default_action: int, arches: [int]) -> [int] is
     let mut prog: [int] = []
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH))
     let n: int = arches.len()
@@ -58,7 +58,7 @@ pub fn build_program_multi_arch(rules: [Rule], default_action: int, arches: [int
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_NR))
     let mut j: int = 0
     while j < rules.len() is
-        let r: Rule = rules[j]
+        let r: rules::Rule = rules[j]
         prog.push(pack_instr(OP_JEQ_K, 0, 1, r.nr))
         prog.push(pack_instr(OP_RET_K, 0, 0, r.action))
         j += 1
@@ -78,8 +78,8 @@ end
 ;; (a subtree bigger than 255 instructions) are handled with the
 ;; standard "short conditional jump over a long unconditional `BPF_JA`"
 ;; trick, so this has no tree-size limit either.
-pub fn sort_rules_by_nr(rules: [Rule]) -> [Rule] is
-    let mut out: [Rule] = []
+pub fn sort_rules_by_nr(rules: [rules::Rule]) -> [rules::Rule] is
+    let mut out: [rules::Rule] = []
     let mut i: int = 0
     while i < rules.len() is
         out.push(rules[i])
@@ -87,7 +87,7 @@ pub fn sort_rules_by_nr(rules: [Rule]) -> [Rule] is
     end
     let mut a: int = 1
     while a < out.len() is
-        let key: Rule = out[a]
+        let key: rules::Rule = out[a]
         let mut b: int = a - 1
         while b >= 0 is
             if out[b].nr <= key.nr is
@@ -108,9 +108,9 @@ end
 ;; loads it once, up front — nothing in this tree ever re-loads, unlike
 ;; comparators.h#'s `CondRule` blocks, since a pure nr-dispatch tree
 ;; never touches any other field and so never clobbers the accumulator).
-fn build_tree(sorted: [Rule], lo: int, hi: int) -> [int] is
+fn build_tree(sorted: [rules::Rule], lo: int, hi: int) -> [int] is
     if hi - lo <= 1 is
-        let r: Rule = sorted[lo]
+        let r: rules::Rule = sorted[lo]
         let mut leaf: [int] = []
         leaf.push(pack_instr(OP_JEQ_K, 0, 1, r.nr))
         leaf.push(pack_instr(OP_RET_K, 0, 0, r.action))
@@ -142,13 +142,13 @@ end
 ;; `rules` with duplicate `nr` values should be deduplicated first
 ;; (`dedupe_rules`, rules.h#) — the tree still produces a *correct*
 ;; program with duplicates present, just not a minimal one.
-pub fn build_program_bsearch(rules: [Rule], default_action: int, arch: int) -> [int] is
+pub fn build_program_bsearch(rules: [rules::Rule], default_action: int, arch: int) -> [int] is
     let mut prog: [int] = []
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH))
     prog.push(pack_instr(OP_JEQ_K,    1, 0, arch))
     prog.push(pack_instr(OP_RET_K,    0, 0, ACTION_KILL_PROCESS))
     prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_NR))
-    let sorted: [Rule] = sort_rules_by_nr(rules)
+    let sorted: [rules::Rule] = sort_rules_by_nr(rules)
     if sorted.len() > 0 is
         let tree: [int] = build_tree(sorted, 0, sorted.len())
         let mut i: int = 0
