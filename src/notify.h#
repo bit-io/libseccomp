@@ -17,60 +17,75 @@ end
 ;; install.h#, "success" here is a resource (the fd) the caller needs,
 ;; not just a status flag.
 @pointers
-pub fn install_notify(rules: [Rule], default_action: int, arch: int) -> int is
-    let prog: [int] = build_program(rules, default_action, arch)
+pub fn install_notify(rules: [rules::Rule], default_action: int, arch: int) -> int is
+    let prog: [int] = bpf::build_program(rules, default_action, arch)
     let n: int = prog.len()
+    let mut fd: int = -1
 
-    let filter_buf = arc_alloc(n * 8)
-    let mut i: int = 0
-    while i < n is
-        ptr_write_i64(filter_buf, i * 8, prog[i])
-        i += 1
+    ;; `arc_*` + `ptr_*` in one function => `unsafe is ... end` (see the
+    ;; note in install.h#'s `install_raw_program`).
+    unsafe is
+        let filter_buf = arc_alloc(n * 8)
+        let mut i: int = 0
+        while i < n is
+            ptr_write_i64(filter_buf, i * 8, prog[i])
+            i += 1
+        end
+
+        let fprog = arc_alloc(16)
+        ptr_write_i16(fprog, 0, n)
+        ptr_write_ptr(fprog, 8, filter_buf)
+
+        prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+
+        ;; `seccomp` itself is a different syscall number per architecture
+        ;; (like every syscall) — reuse the very table this whole library
+        ;; already ships (syscalls.h#) instead of a second, easy-to-drift
+        ;; hardcoded constant.
+        let sys_seccomp: int = syscalls::number_for_arch("seccomp", arch)
+        fd = syscall(
+            sys_seccomp,
+            SECCOMP_SET_MODE_FILTER,
+            SECCOMP_FILTER_FLAG_NEW_LISTENER,
+            fprog, 0, 0, 0
+        )
+
+        arc_release(filter_buf)
+        arc_release(fprog)
     end
 
-    let fprog = arc_alloc(16)
-    ptr_write_i16(fprog, 0, n)
-    ptr_write_ptr(fprog, 8, filter_buf)
-
-    prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-
-    ;; `seccomp` itself is a different syscall number per architecture
-    ;; (like every syscall) — reuse the very table this whole library
-    ;; already ships (syscalls.h#) instead of a second, easy-to-drift
-    ;; hardcoded constant.
-    let sys_seccomp: int = number_for_arch("seccomp", arch)
-    let fd: int = syscall(
-        sys_seccomp,
-        SECCOMP_SET_MODE_FILTER,
-        SECCOMP_FILTER_FLAG_NEW_LISTENER,
-        fprog, 0, 0, 0
-    )
-
-    arc_release(filter_buf)
-    arc_release(fprog)
     return fd
 end
 
 ;; Block for (and return) the next notification on `fd`.
 @pointers
 pub fn notif_receive(fd: int) -> Notif is
-    ;; struct seccomp_notif { u64 id; u32 pid; u32 flags; struct seccomp_data data; } — 80 bytes.
-    let buf = arc_alloc(80)
-    ioctl(fd, SECCOMP_IOCTL_NOTIF_RECV, buf)
-
-    let id:    int = ptr_read_i64(buf, 0)
-    let pid:   int = ptr_read_i32(buf, 8)
-    let flags: int = ptr_read_i32(buf, 12)
-    let nr:    int = ptr_read_i32(buf, 16)
-    let arch:  int = ptr_read_i32(buf, 20)
+    let mut id:    int = 0
+    let mut pid:   int = 0
+    let mut flags: int = 0
+    let mut nr:    int = 0
+    let mut arch:  int = 0
     let mut args: [int] = []
-    let mut i: int = 0
-    while i < 6 is
-        args.push(ptr_read_i64(buf, 32 + i * 8))
-        i += 1
+
+    unsafe is
+        ;; struct seccomp_notif { u64 id; u32 pid; u32 flags; struct seccomp_data data; } — 80 bytes.
+        let buf = arc_alloc(80)
+        ioctl(fd, SECCOMP_IOCTL_NOTIF_RECV, buf)
+
+        id    = ptr_read_i64(buf, 0)
+        pid   = ptr_read_i32(buf, 8)
+        flags = ptr_read_i32(buf, 12)
+        nr    = ptr_read_i32(buf, 16)
+        arch  = ptr_read_i32(buf, 20)
+        let mut i: int = 0
+        while i < 6 is
+            args.push(ptr_read_i64(buf, 32 + i * 8))
+            i += 1
+        end
+
+        arc_release(buf)
     end
 
-    arc_release(buf)
     return Notif { id: id, pid: pid, flags: flags, nr: nr, arch: arch, args: args }
 end
 
@@ -80,15 +95,21 @@ end
 ;; Returns true iff the kernel accepted the response.
 @pointers
 pub fn notif_respond(fd: int, id: int, val: int, error: int, flags: int) -> bool is
-    ;; struct seccomp_notif_resp { u64 id; s64 val; s32 error; u32 flags; } — 24 bytes.
-    let buf = arc_alloc(24)
-    ptr_write_i64(buf, 0, id)
-    ptr_write_i64(buf, 8, val)
-    ptr_write_i32(buf, 16, error)
-    ptr_write_i32(buf, 20, flags)
-    let rc: int = ioctl(fd, SECCOMP_IOCTL_NOTIF_SEND, buf)
-    arc_release(buf)
-    return rc == 0
+    let mut ok: bool = false
+
+    unsafe is
+        ;; struct seccomp_notif_resp { u64 id; s64 val; s32 error; u32 flags; } — 24 bytes.
+        let buf = arc_alloc(24)
+        ptr_write_i64(buf, 0, id)
+        ptr_write_i64(buf, 8, val)
+        ptr_write_i32(buf, 16, error)
+        ptr_write_i32(buf, 20, flags)
+        let rc: int = ioctl(fd, SECCOMP_IOCTL_NOTIF_SEND, buf)
+        arc_release(buf)
+        ok = rc == 0
+    end
+
+    return ok
 end
 
 ;; Check whether `id` (from a `Notif` received earlier) is still live —
@@ -97,11 +118,17 @@ end
 ;; before doing anything with side effects on the supervisor's behalf.
 @pointers
 pub fn notif_id_valid(fd: int, id: int) -> bool is
-    let buf = arc_alloc(8)
-    ptr_write_i64(buf, 0, id)
-    let rc: int = ioctl(fd, SECCOMP_IOCTL_NOTIF_ID_VALID, buf)
-    arc_release(buf)
-    return rc == 0
+    let mut ok: bool = false
+
+    unsafe is
+        let buf = arc_alloc(8)
+        ptr_write_i64(buf, 0, id)
+        let rc: int = ioctl(fd, SECCOMP_IOCTL_NOTIF_ID_VALID, buf)
+        arc_release(buf)
+        ok = rc == 0
+    end
+
+    return ok
 end
 
 ;; Close a notification fd once the supervisor loop is done with it.
