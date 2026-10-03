@@ -1,4 +1,4 @@
-use "bytes -> libseccomp" from "seccomp"
+use "bit -> libseccomp" from "seccomp"
 
 fn main() is
     let mut rules: [seccomp::CondRule] = []
