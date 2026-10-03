@@ -1,60 +1,69 @@
 @pointers
 pub fn install_raw_program(prog: [int]) -> bool is
     let n: int = prog.len()
+    let mut ok: bool = false
 
-    ;; struct sock_filter filter[n];  -- n * 8 bytes, one packed word
-    ;; per instruction (see bpf.h#'s `pack_instr`).
-    let filter_buf = arc_alloc(n * 8)
-    let mut i: int = 0
-    while i < n is
-        ptr_write_i64(filter_buf, i * 8, prog[i])
-        i += 1
+    ;; `arc_*` builtins are gated behind `@arc` (and `ptr_*` behind
+    ;; `@pointers`) — a function can only carry one mode, so this body
+    ;; needs both under one `unsafe is ... end` umbrella, which the
+    ;; typechecker accepts for every raw-memory builtin.
+    unsafe is
+        ;; struct sock_filter filter[n];  -- n * 8 bytes, one packed word
+        ;; per instruction (see bpf.h#'s `pack_instr`).
+        let filter_buf = arc_alloc(n * 8)
+        let mut i: int = 0
+        while i < n is
+            ptr_write_i64(filter_buf, i * 8, prog[i])
+            i += 1
+        end
+
+        ;; struct sock_fprog { unsigned short len; struct sock_filter *filter; };
+        ;; 16 bytes on a 64-bit target: u16 len @0 (+6 padding), ptr @8.
+        let fprog = arc_alloc(16)
+        ptr_write_i16(fprog, 0, n)
+        ptr_write_ptr(fprog, 8, filter_buf)
+
+        prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+        let rc: int = prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, fprog, 0, 0)
+
+        ;; The kernel copies the fprog/filter contents during the prctl call
+        ;; itself — nothing needs to survive past this point.
+        arc_release(filter_buf)
+        arc_release(fprog)
+
+        ok = rc == 0
     end
 
-    ;; struct sock_fprog { unsigned short len; struct sock_filter *filter; };
-    ;; 16 bytes on a 64-bit target: u16 len @0 (+6 padding), ptr @8.
-    let fprog = arc_alloc(16)
-    ptr_write_i16(fprog, 0, n)
-    ptr_write_ptr(fprog, 8, filter_buf)
-
-    prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
-    let rc: int = prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, fprog, 0, 0)
-
-    ;; The kernel copies the fprog/filter contents during the prctl call
-    ;; itself — nothing needs to survive past this point.
-    arc_release(filter_buf)
-    arc_release(fprog)
-
-    return rc == 0
+    return ok
 end
 
 ;; ── plain Rule installers ────────────────────────────────────────────
-pub fn install(rules: [Rule], default_action: int) -> bool is
+pub fn install(rules: [rules::Rule], default_action: int) -> bool is
     return install_arch(rules, default_action, ARCH_X86_64)
 end
 
-pub fn install_arch(rules: [Rule], default_action: int, arch: int) -> bool is
-    return install_raw_program(build_program(rules, default_action, arch))
+pub fn install_arch(rules: [rules::Rule], default_action: int, arch: int) -> bool is
+    return install_raw_program(bpf::build_program(rules, default_action, arch))
 end
 
-pub fn install_multi_arch(rules: [Rule], default_action: int, arches: [int]) -> bool is
-    return install_raw_program(build_program_multi_arch(rules, default_action, arches))
+pub fn install_multi_arch(rules: [rules::Rule], default_action: int, arches: [int]) -> bool is
+    return install_raw_program(bpf::build_program_multi_arch(rules, default_action, arches))
 end
 
 ;; Same as `install_arch`, but dispatches with the O(log n) binary-search
 ;; program (bpf.h#) instead of the default linear scan — worth it once
 ;; `rules` has more than roughly a hundred entries.
-pub fn install_bsearch(rules: [Rule], default_action: int, arch: int) -> bool is
-    return install_raw_program(build_program_bsearch(rules, default_action, arch))
+pub fn install_bsearch(rules: [rules::Rule], default_action: int, arch: int) -> bool is
+    return install_raw_program(bpf::build_program_bsearch(rules, default_action, arch))
 end
 
 ;; ── argument-comparator (CondRule) installers ────────────────────────
-pub fn install_cond(rules: [CondRule], default_action: int) -> bool is
+pub fn install_cond(rules: [comparators::CondRule], default_action: int) -> bool is
     return install_cond_arch(rules, default_action, ARCH_X86_64)
 end
 
-pub fn install_cond_arch(rules: [CondRule], default_action: int, arch: int) -> bool is
-    return install_raw_program(build_program_cond(rules, default_action, arch))
+pub fn install_cond_arch(rules: [comparators::CondRule], default_action: int, arch: int) -> bool is
+    return install_raw_program(comparators::build_program_cond(rules, default_action, arch))
 end
 
 ;; ── diagnostics ───────────────────────────────────────────────────────
