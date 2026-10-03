@@ -1,5 +1,5 @@
 pub fn number(name: string) -> int is
-    return number_x86_64(name)
+    return syscalls_x86_64::number_x86_64(name)
 end
 
 ;; Architecture-aware lookup. Unknown `arch` values fall back to the
@@ -9,7 +9,7 @@ end
 ;; resolves".
 pub fn number_for_arch(name: string, arch: int) -> int is
     if arch == ARCH_AARCH64 is
-        return number_aarch64(name)
+        return syscalls_aarch64::number_aarch64(name)
     end
-    return number_x86_64(name)
+    return syscalls_x86_64::number_x86_64(name)
 end
