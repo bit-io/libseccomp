@@ -5,17 +5,17 @@ mod lib
 
 #[test]
 fn test_number_known_syscalls() is
-    assert_eq(lib::number("read"), 0)
-    assert_eq(lib::number("write"), 1)
-    assert_eq(lib::number("exit_group"), 231)
-    assert_eq(lib::number("openat"), 257)
-    assert_eq(lib::number("clone3"), 435)
+    assert_eq(syscalls::number("read"), 0)
+    assert_eq(syscalls::number("write"), 1)
+    assert_eq(syscalls::number("exit_group"), 231)
+    assert_eq(syscalls::number("openat"), 257)
+    assert_eq(syscalls::number("clone3"), 435)
 end
 
 #[test]
 fn test_number_unknown_is_negative_one() is
-    assert_eq(lib::number("this_syscall_does_not_exist"), -1)
-    assert_eq(lib::number(""), -1)
+    assert_eq(syscalls::number("this_syscall_does_not_exist"), -1)
+    assert_eq(syscalls::number(""), -1)
 end
 
 #[test]
@@ -23,107 +23,107 @@ fn test_number_aarch64_differs_from_x86_64() is
     ;; same syscall, genuinely different number per the unified generic
     ;; table aarch64 uses — this is the whole reason the two tables
     ;; can't be merged with a couple of per-arch overrides.
-    assert_eq(lib::number_aarch64("read"), 63)
-    assert_eq(lib::number_aarch64("write"), 64)
-    assert_eq(lib::number_aarch64("openat"), 56)
-    assert_eq(lib::number_aarch64("exit_group"), 94)
+    assert_eq(syscalls_aarch64::number_aarch64("read"), 63)
+    assert_eq(syscalls_aarch64::number_aarch64("write"), 64)
+    assert_eq(syscalls_aarch64::number_aarch64("openat"), 56)
+    assert_eq(syscalls_aarch64::number_aarch64("exit_group"), 94)
 end
 
 #[test]
 fn test_number_for_arch_dispatches_correctly() is
-    assert_eq(lib::number_for_arch("read", lib::ARCH_X86_64), 0)
-    assert_eq(lib::number_for_arch("read", lib::ARCH_AARCH64), 63)
+    assert_eq(syscalls::number_for_arch("read", ARCH_X86_64), 0)
+    assert_eq(syscalls::number_for_arch("read", ARCH_AARCH64), 63)
 end
 
 ;; ── actions ───────────────────────────────────────────────────────────
 
 #[test]
 fn test_action_errno_packs_low_16_bits() is
-    assert_eq(lib::action_errno(1), 0x00050001)
-    assert_eq(lib::action_errno(13), 0x0005000D)
+    assert_eq(consts::action_errno(1), 0x00050001)
+    assert_eq(consts::action_errno(13), 0x0005000D)
 end
 
 #[test]
 fn test_action_trace_packs_low_16_bits() is
-    assert_eq(lib::action_trace(7), 0x7ff00007)
+    assert_eq(consts::action_trace(7), 0x7ff00007)
 end
 
 ;; ── errno ─────────────────────────────────────────────────────────────
 
 #[test]
 fn test_errno_consts_match_linux_numbering() is
-    assert_eq(lib::EPERM, 1)
-    assert_eq(lib::ENOENT, 2)
-    assert_eq(lib::EACCES, 13)
-    assert_eq(lib::EINVAL, 22)
-    assert_eq(lib::ENOSYS, 38)
+    assert_eq(EPERM, 1)
+    assert_eq(ENOENT, 2)
+    assert_eq(EACCES, 13)
+    assert_eq(EINVAL, 22)
+    assert_eq(ENOSYS, 38)
 end
 
 #[test]
 fn test_errno_number_and_name_roundtrip() is
-    assert_eq(lib::errno_number("EPERM"), 1)
-    assert_eq(lib::errno_number("ENOSYS"), 38)
-    assert_eq(lib::errno_name(1), "EPERM")
-    assert_eq(lib::errno_name(38), "ENOSYS")
+    assert_eq(errno::errno_number("EPERM"), 1)
+    assert_eq(errno::errno_number("ENOSYS"), 38)
+    assert_eq(errno::errno_name(1), "EPERM")
+    assert_eq(errno::errno_name(38), "ENOSYS")
 end
 
 #[test]
 fn test_errno_aliases() is
-    assert_eq(lib::errno_number("EWOULDBLOCK"), lib::errno_number("EAGAIN"))
-    assert_eq(lib::errno_number("EDEADLOCK"), lib::errno_number("EDEADLK"))
+    assert_eq(errno::errno_number("EWOULDBLOCK"), errno::errno_number("EAGAIN"))
+    assert_eq(errno::errno_number("EDEADLOCK"), errno::errno_number("EDEADLK"))
 end
 
 #[test]
 fn test_errno_unknown() is
-    assert_eq(lib::errno_number("NOT_A_REAL_ERRNO"), -1)
-    assert_eq(lib::errno_name(999999), "EUNKNOWN")
+    assert_eq(errno::errno_number("NOT_A_REAL_ERRNO"), -1)
+    assert_eq(errno::errno_name(999999), "EUNKNOWN")
 end
 
 ;; ── rule-list builders ────────────────────────────────────────────────
 
 #[test]
 fn test_allow_nr_appends_allow_rule() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_nr(rules, 0)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_nr(rules, 0)
     assert_eq(rules.len(), 1)
     assert_eq(rules[0].nr, 0)
-    assert_eq(rules[0].action, lib::ACTION_ALLOW)
+    assert_eq(rules[0].action, ACTION_ALLOW)
 end
 
 #[test]
 fn test_allow_unknown_name_is_skipped() is
     ;; A typo must never silently turn into "allow everything" — an
     ;; unresolved name (number() == -1) should add nothing at all.
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow(rules, "not_a_real_syscall")
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow(rules, "not_a_real_syscall")
     assert_eq(rules.len(), 0)
 end
 
 #[test]
 fn test_deny_errno_nr_packs_action() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::deny_errno_nr(rules, 101, 1)   ;; ptrace -> EPERM
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::deny_errno_nr(rules, 101, 1)   ;; ptrace -> EPERM
     assert_eq(rules.len(), 1)
     assert_eq(rules[0].nr, 101)
-    assert_eq(rules[0].action, lib::action_errno(1))
+    assert_eq(rules[0].action, consts::action_errno(1))
 end
 
 #[test]
 fn test_allow_arch_uses_correct_table() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_arch(rules, "read", lib::ARCH_AARCH64)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_arch(rules, "read", ARCH_AARCH64)
     assert_eq(rules[0].nr, 63)   ;; not 0 — that would be the x86_64 table leaking in
 end
 
 #[test]
 fn test_allow_baseline_is_nonempty_and_all_resolved() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_baseline(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_baseline(rules)
     assert_true(rules.len() > 20)
     let mut i: int = 0
     while i < rules.len() is
         assert_true(rules[i].nr >= 0)
-        assert_eq(rules[i].action, lib::ACTION_ALLOW)
+        assert_eq(rules[i].action, ACTION_ALLOW)
         i += 1
     end
 end
@@ -132,49 +132,49 @@ end
 
 #[test]
 fn test_validate_rules_clean_list_has_no_warnings() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow(rules, "read")
-    rules = lib::allow(rules, "write")
-    let warnings: [string] = lib::validate_rules(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow(rules, "read")
+    rules = rules::allow(rules, "write")
+    let warnings: [string] = rules::validate_rules(rules)
     assert_eq(warnings.len(), 0)
 end
 
 #[test]
 fn test_validate_rules_flags_negative_nr() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules.push(lib::Rule { nr: -1, action: lib::ACTION_ALLOW })
-    let warnings: [string] = lib::validate_rules(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules.push(rules::Rule { nr: -1, action: ACTION_ALLOW })
+    let warnings: [string] = rules::validate_rules(rules)
     assert_true(warnings.len() >= 1)
 end
 
 #[test]
 fn test_validate_rules_flags_conflicting_duplicates() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules.push(lib::Rule { nr: 0, action: lib::ACTION_ALLOW })
-    rules.push(lib::Rule { nr: 0, action: lib::ACTION_KILL_PROCESS })
-    let warnings: [string] = lib::validate_rules(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules.push(rules::Rule { nr: 0, action: ACTION_ALLOW })
+    rules.push(rules::Rule { nr: 0, action: ACTION_KILL_PROCESS })
+    let warnings: [string] = rules::validate_rules(rules)
     assert_eq(warnings.len(), 1)
 end
 
 #[test]
 fn test_validate_rules_flags_harmless_duplicates() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules.push(lib::Rule { nr: 0, action: lib::ACTION_ALLOW })
-    rules.push(lib::Rule { nr: 0, action: lib::ACTION_ALLOW })
-    let warnings: [string] = lib::validate_rules(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules.push(rules::Rule { nr: 0, action: ACTION_ALLOW })
+    rules.push(rules::Rule { nr: 0, action: ACTION_ALLOW })
+    let warnings: [string] = rules::validate_rules(rules)
     assert_eq(warnings.len(), 1)
 end
 
 #[test]
 fn test_dedupe_rules_keeps_first_occurrence() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules.push(lib::Rule { nr: 5, action: lib::ACTION_ALLOW })
-    rules.push(lib::Rule { nr: 5, action: lib::ACTION_KILL_PROCESS })
-    rules.push(lib::Rule { nr: 6, action: lib::ACTION_ALLOW })
-    let out: [lib::Rule] = lib::dedupe_rules(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules.push(rules::Rule { nr: 5, action: ACTION_ALLOW })
+    rules.push(rules::Rule { nr: 5, action: ACTION_KILL_PROCESS })
+    rules.push(rules::Rule { nr: 6, action: ACTION_ALLOW })
+    let out: [rules::Rule] = rules::dedupe_rules(rules)
     assert_eq(out.len(), 2)
     assert_eq(out[0].nr, 5)
-    assert_eq(out[0].action, lib::ACTION_ALLOW)
+    assert_eq(out[0].action, ACTION_ALLOW)
     assert_eq(out[1].nr, 6)
 end
 
@@ -192,31 +192,31 @@ fn test_pack_instr_matches_sock_filter_byte_layout() is
     ;; it as 0. `install_arch` never has this problem since it only
     ;; ever runs `pack_instr` at runtime, never writes the packed
     ;; result out as a literal.)
-    let packed: int = lib::pack_instr(0x15, 0x01, 0x02, 0x11223344)
+    let packed: int = bpf::pack_instr(0x15, 0x01, 0x02, 0x11223344)
     assert_eq(packed, 0x1122334402010015)
 end
 
 #[test]
 fn test_pack_instr_masks_oversized_fields() is
-    let packed: int = lib::pack_instr(0x1FFFF, 0x1FF, 0x1FF, 0)
-    assert_eq(packed, lib::pack_instr(0xFFFF, 0xFF, 0xFF, 0))
+    let packed: int = bpf::pack_instr(0x1FFFF, 0x1FF, 0x1FF, 0)
+    assert_eq(packed, bpf::pack_instr(0xFFFF, 0xFF, 0xFF, 0))
 end
 
 #[test]
 fn test_build_program_length() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_nr(rules, 0)
-    rules = lib::allow_nr(rules, 1)
-    let prog: [int] = lib::build_program(rules, lib::ACTION_KILL_PROCESS, lib::ARCH_X86_64)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_nr(rules, 0)
+    rules = rules::allow_nr(rules, 1)
+    let prog: [int] = bpf::build_program(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
     assert_eq(prog.len(), 4 + 2 * rules.len() + 1)
 end
 
 #[test]
 fn test_build_program_starts_with_arch_check() is
-    let rules: [lib::Rule] = lib::new_rules()
-    let prog: [int] = lib::build_program(rules, lib::ACTION_KILL_PROCESS, lib::ARCH_X86_64)
-    let expect0: int = lib::pack_instr(lib::OP_LD_W_ABS, 0, 0, lib::OFF_ARCH)
-    let expect1: int = lib::pack_instr(lib::OP_JEQ_K, 1, 0, lib::ARCH_X86_64)
+    let rules: [rules::Rule] = rules::new_rules()
+    let prog: [int] = bpf::build_program(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
+    let expect0: int = bpf::pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH)
+    let expect1: int = bpf::pack_instr(OP_JEQ_K, 1, 0, ARCH_X86_64)
     assert_eq(prog[0], expect0)
     assert_eq(prog[1], expect1)
 end
@@ -225,12 +225,12 @@ end
 
 #[test]
 fn test_build_program_multi_arch_accepts_either_listed_arch() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_nr(rules, 0)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_nr(rules, 0)
     let mut arches: [int] = []
-    arches.push(lib::ARCH_X86_64)
-    arches.push(lib::ARCH_I386)
-    let prog: [int] = lib::build_program_multi_arch(rules, lib::ACTION_KILL_PROCESS, arches)
+    arches.push(ARCH_X86_64)
+    arches.push(ARCH_I386)
+    let prog: [int] = bpf::build_program_multi_arch(rules, ACTION_KILL_PROCESS, arches)
     ;; 1 (load arch) + 2 (arch checks) + 1 (kill) + 1 (load nr) + 2 (rule) + 1 (default)
     assert_eq(prog.len(), 1 + 2 + 1 + 1 + 2 + 1)
 end
@@ -239,11 +239,11 @@ end
 
 #[test]
 fn test_sort_rules_by_nr_sorts_ascending() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules.push(lib::Rule { nr: 50, action: lib::ACTION_ALLOW })
-    rules.push(lib::Rule { nr: 10, action: lib::ACTION_ALLOW })
-    rules.push(lib::Rule { nr: 30, action: lib::ACTION_ALLOW })
-    let sorted: [lib::Rule] = lib::sort_rules_by_nr(rules)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules.push(rules::Rule { nr: 50, action: ACTION_ALLOW })
+    rules.push(rules::Rule { nr: 10, action: ACTION_ALLOW })
+    rules.push(rules::Rule { nr: 30, action: ACTION_ALLOW })
+    let sorted: [rules::Rule] = bpf::sort_rules_by_nr(rules)
     assert_eq(sorted[0].nr, 10)
     assert_eq(sorted[1].nr, 30)
     assert_eq(sorted[2].nr, 50)
@@ -256,12 +256,12 @@ fn test_build_program_bsearch_well_formed() is
     ;; produces a well-formed, correctly-sized program for a handful of
     ;; rules: 4 fixed (arch load/check/kill, nr load) + 3 branch nodes
     ;; (for 4 leaves) * 2 + 4 leaves * 2.
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_nr(rules, 0)
-    rules = lib::allow_nr(rules, 1)
-    rules = lib::allow_nr(rules, 2)
-    rules = lib::allow_nr(rules, 3)
-    let prog: [int] = lib::build_program_bsearch(rules, lib::ACTION_KILL_PROCESS, lib::ARCH_X86_64)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_nr(rules, 0)
+    rules = rules::allow_nr(rules, 1)
+    rules = rules::allow_nr(rules, 2)
+    rules = rules::allow_nr(rules, 3)
+    let prog: [int] = bpf::build_program_bsearch(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
     assert_eq(prog.len(), 4 + 3 * 2 + 4 * 2)
 end
 
@@ -269,10 +269,10 @@ end
 
 #[test]
 fn test_rule_to_cond_preserves_nr_and_action() is
-    let r: lib::Rule = lib::Rule { nr: 42, action: lib::ACTION_ALLOW }
-    let c: lib::CondRule = lib::rule_to_cond(r)
+    let r: rules::Rule = rules::Rule { nr: 42, action: ACTION_ALLOW }
+    let c: comparators::CondRule = comparators::rule_to_cond(r)
     assert_eq(c.nr, 42)
-    assert_eq(c.action, lib::ACTION_ALLOW)
+    assert_eq(c.action, ACTION_ALLOW)
     assert_eq(c.conditions.len(), 0)
 end
 
@@ -280,44 +280,44 @@ end
 fn test_cond_rule_block_no_conditions_is_three_instructions() is
     ;; [load nr, jeq nr, ret] = 3 instructions when there are no
     ;; conditions at all.
-    let r: lib::CondRule = lib::cond_rule(0, lib::ACTION_ALLOW, [])
-    let block: [int] = lib::build_cond_rule_block(r)
+    let r: comparators::CondRule = comparators::cond_rule(0, ACTION_ALLOW, [])
+    let block: [int] = comparators::build_cond_rule_block(r)
     assert_eq(block.len(), 3)
 end
 
 #[test]
 fn test_cond_rule_block_eq_condition_adds_four_instructions() is
     ;; base 3 (load nr, jeq nr, ret) + eq's 4 (load hi, jeq hi, load lo, jeq lo)
-    let conds: [lib::ArgCond] = [lib::eq(0, 5)]
-    let r: lib::CondRule = lib::cond_rule(0, lib::ACTION_ALLOW, conds)
-    let block: [int] = lib::build_cond_rule_block(r)
+    let conds: [comparators::ArgCond] = [comparators::eq(0, 5)]
+    let r: comparators::CondRule = comparators::cond_rule(0, ACTION_ALLOW, conds)
+    let block: [int] = comparators::build_cond_rule_block(r)
     assert_eq(block.len(), 3 + 4)
 end
 
 #[test]
 fn test_cond_rule_block_single_word_comparator_adds_two_instructions() is
     ;; gt/ge/lt/le/ne all lower to "load lo + one conditional jump" = 2
-    let conds: [lib::ArgCond] = [lib::gt(1, 100)]
-    let r: lib::CondRule = lib::cond_rule(59, lib::ACTION_ALLOW, conds)
-    let block: [int] = lib::build_cond_rule_block(r)
+    let conds: [comparators::ArgCond] = [comparators::gt(1, 100)]
+    let r: comparators::CondRule = comparators::cond_rule(59, ACTION_ALLOW, conds)
+    let block: [int] = comparators::build_cond_rule_block(r)
     assert_eq(block.len(), 3 + 2)
 end
 
 #[test]
 fn test_cond_rule_block_masked_eq_adds_three_instructions() is
-    let conds: [lib::ArgCond] = [lib::masked_eq(2, 0xFF, 1)]
-    let r: lib::CondRule = lib::cond_rule(0, lib::ACTION_ALLOW, conds)
-    let block: [int] = lib::build_cond_rule_block(r)
+    let conds: [comparators::ArgCond] = [comparators::masked_eq(2, 0xFF, 1)]
+    let r: comparators::CondRule = comparators::cond_rule(0, ACTION_ALLOW, conds)
+    let block: [int] = comparators::build_cond_rule_block(r)
     assert_eq(block.len(), 3 + 3)
 end
 
 #[test]
 fn test_build_program_cond_wraps_with_arch_check_and_default() is
-    let conds: [lib::ArgCond] = [lib::eq(0, 5)]
-    let r: lib::CondRule = lib::cond_rule(0, lib::ACTION_ALLOW, conds)
-    let mut rules: [lib::CondRule] = []
+    let conds: [comparators::ArgCond] = [comparators::eq(0, 5)]
+    let r: comparators::CondRule = comparators::cond_rule(0, ACTION_ALLOW, conds)
+    let mut rules: [comparators::CondRule] = []
     rules.push(r)
-    let prog: [int] = lib::build_program_cond(rules, lib::ACTION_KILL_PROCESS, lib::ARCH_X86_64)
+    let prog: [int] = comparators::build_program_cond(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
     ;; 3 fixed (load arch, jeq arch, kill) + this rule's 7-instruction block + 1 default RET
     assert_eq(prog.len(), 3 + 7 + 1)
 end
@@ -330,8 +330,8 @@ fn test_export_import_hex_roundtrip() is
     prog.push(1)
     prog.push(255)
     prog.push(65536)
-    let hex: string = lib::export_hex(prog)
-    let back: [int] = lib::import_hex(hex)
+    let hex: string = export::export_hex(prog)
+    let back: [int] = export::import_hex(hex)
     assert_eq(back.len(), 3)
     assert_eq(back[0], 1)
     assert_eq(back[1], 255)
@@ -340,9 +340,9 @@ end
 
 #[test]
 fn test_export_pfc_produces_nonempty_output() is
-    let mut rules: [lib::Rule] = lib::new_rules()
-    rules = lib::allow_nr(rules, 0)
-    let prog: [int] = lib::build_program(rules, lib::ACTION_KILL_PROCESS, lib::ARCH_X86_64)
-    let text: string = lib::export_pfc(prog)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_nr(rules, 0)
+    let prog: [int] = bpf::build_program(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
+    let text: string = export::export_pfc(prog)
     assert_true(text.len() > 0)
 end
