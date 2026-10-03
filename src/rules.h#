@@ -15,7 +15,7 @@ end
 ;; of silent.
 
 pub fn allow(rules: [Rule], name: string) -> [Rule] is
-    return allow_nr(rules, number(name))
+    return allow_nr(rules, syscalls::number(name))
 end
 
 pub fn allow_nr(rules: [Rule], nr: int) -> [Rule] is
@@ -31,28 +31,28 @@ end
 ;; when building a filter for `ARCH_AARCH64` (or a
 ;; `build_program_multi_arch` filter spanning more than one table).
 pub fn allow_arch(rules: [Rule], name: string, arch: int) -> [Rule] is
-    return allow_nr(rules, number_for_arch(name, arch))
+    return allow_nr(rules, syscalls::number_for_arch(name, arch))
 end
 
 pub fn deny_errno(rules: [Rule], name: string, err: int) -> [Rule] is
-    return deny_errno_nr(rules, number(name), err)
+    return deny_errno_nr(rules, syscalls::number(name), err)
 end
 
 pub fn deny_errno_arch(rules: [Rule], name: string, err: int, arch: int) -> [Rule] is
-    return deny_errno_nr(rules, number_for_arch(name, arch), err)
+    return deny_errno_nr(rules, syscalls::number_for_arch(name, arch), err)
 end
 
 pub fn deny_errno_nr(rules: [Rule], nr: int, err: int) -> [Rule] is
     let mut r: [Rule] = rules
     if nr >= 0 is
-        r.push(Rule { nr: nr, action: action_errno(err) })
+        r.push(Rule { nr: nr, action: consts::action_errno(err) })
     end
     return r
 end
 
 pub fn deny_kill(rules: [Rule], name: string) -> [Rule] is
     let mut r: [Rule] = rules
-    let nr: int = number(name)
+    let nr: int = syscalls::number(name)
     if nr >= 0 is
         r.push(Rule { nr: nr, action: ACTION_KILL_PROCESS })
     end
@@ -61,7 +61,7 @@ end
 
 pub fn deny_trap(rules: [Rule], name: string) -> [Rule] is
     let mut r: [Rule] = rules
-    let nr: int = number(name)
+    let nr: int = syscalls::number(name)
     if nr >= 0 is
         r.push(Rule { nr: nr, action: ACTION_TRAP })
     end
@@ -70,7 +70,7 @@ end
 
 pub fn deny_log(rules: [Rule], name: string) -> [Rule] is
     let mut r: [Rule] = rules
-    let nr: int = number(name)
+    let nr: int = syscalls::number(name)
     if nr >= 0 is
         r.push(Rule { nr: nr, action: ACTION_LOG })
     end
