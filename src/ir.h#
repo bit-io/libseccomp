@@ -51,12 +51,12 @@ pub fn patch_and_pack(blk: [Instr]) -> [int] is
         if ins.is_cond is
             let fail_dist: int = n - i - 1
             if ins.invert is
-                out.push(pack_instr(ins.code, fail_dist, 0, ins.k))
+                out.push(bpf::pack_instr(ins.code, fail_dist, 0, ins.k))
             else is
-                out.push(pack_instr(ins.code, 0, fail_dist, ins.k))
+                out.push(bpf::pack_instr(ins.code, 0, fail_dist, ins.k))
             end
         else is
-            out.push(pack_instr(ins.code, ins.jt, ins.jf, ins.k))
+            out.push(bpf::pack_instr(ins.code, ins.jt, ins.jf, ins.k))
         end
         i += 1
     end
