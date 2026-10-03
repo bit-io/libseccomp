@@ -1,4 +1,4 @@
-# libseccomp (H#)
+# libseccomp
 
 Natywny, **w 100% napisany w H#**, odpowiednik crate'a `libseccomp` z Rusta:
 budowanie i instalowanie filtrów **seccomp-bpf** bez linkowania z prawdziwym
@@ -18,24 +18,30 @@ ani `bytes`, ani `string` nie nadają się do trzymania tego bufora.
 
 ```bash
 cd twoj-projekt
-bytes add libseccomp
+bit add libseccomp
 ```
 
-lub w `Bytes.hk`:
+lub w `Bit.hk`:
 
 ```
-[deps]
+[dependencies]
 -> libseccomp => newest
 ```
+
+a w kodzie: `use "bit -> libseccomp"`.
 
 ## Struktura modułów
 
 Kod źródłowy jest podzielony na kilka plików w `src/`, połączonych przez
-`mod` w `src/lib.h#` (punkt wejścia z manifestu `Bytes.hk`). W H# `mod X`
-scala zawartość pliku bezpośrednio (bez prawdziwego zagnieżdżonego
-namespace'u) — dlatego z zewnątrz każda funkcja jest dostępna po prostu
-jako `seccomp::nazwa_funkcji(...)`, niezależnie od tego, w którym pliku
-faktycznie mieszka:
+`mod` w `src/lib.h#` (punkt wejścia biblioteki — `bit` znajduje go sam jako
+`src/lib.h#`). W H# każdy `mod X` nadaje funkcjom i strukturom z pliku
+`X.h#` prefiks `X_`, więc z zewnątrz funkcję woła się przez nazwę **modułu**,
+w którym mieszka: `rules::allow(...)`, `install::install(...)`,
+a typ jako `rules::Rule`. Stałe (`ACTION_*`, `ARCH_*`, `EPERM`, …) nie są
+prefiksowane — używa się ich po prostu po nazwie. Wywołania między plikami
+wewnątrz biblioteki muszą być zapisane tak samo (np. `bpf::pack_instr(...)`
+w `ir.h#`) — niekwalifikowana nazwa z innego pliku kończy się błędem
+`codegen: undefined fn`:
 
 | Plik | Zawartość |
 |---|---|
@@ -56,21 +62,21 @@ faktycznie mieszka:
 ## Szybki start
 
 ```hsharp
-use "bytes -> libseccomp" from "seccomp"
+use "bit -> libseccomp"
 
 fn main() is
-    let mut rules: [seccomp::Rule] = seccomp::new_rules()
-    rules = seccomp::allow_baseline(rules)     ;; read/write/mmap/exit/...
-    rules = seccomp::allow(rules, "openat")
-    rules = seccomp::deny_errno(rules, "ptrace", seccomp::EPERM)
+    let mut rules: [rules::Rule] = rules::new_rules()
+    rules = rules::allow_baseline(rules)     ;; read/write/mmap/exit/...
+    rules = rules::allow(rules, "openat")
+    rules = rules::deny_errno(rules, "ptrace", EPERM)
 
-    let warnings: [string] = seccomp::validate_rules(rules)
+    let warnings: [string] = rules::validate_rules(rules)
     ;; (opcjonalnie: wypisz `warnings`, jeśli niepuste — literówki i
     ;; konflikty reguł, nigdy fatalne same w sobie)
 
-    let ok: bool = seccomp::install(rules, seccomp::ACTION_KILL_PROCESS)
+    let ok: bool = install::install(rules, ACTION_KILL_PROCESS)
     if !ok is
-        write("install failed, errno=" + to_string(seccomp::last_errno()))
+        write("install failed, errno=" + to_string(install::last_errno()))
     end
 end
 ```
@@ -81,11 +87,11 @@ end
 h# compile src/main.h# --release -o app
 ```
 
-`h# preview` / `bytes run --tier interpreter` **nie** obsługują `extern`,
+`h# preview` (interpreter) **nie** obsługują `extern`,
 `arc_alloc` ani `ptr_*` — działa wyłącznie logika czysta (`bpf.h#`,
 `rules.h#`, `comparators.h#`'s encoding, obie tabele syscalli, `errno.h#`,
 `export.h#`), którą pokrywa `src/lib_test.h#` uruchamiane przez
-`bytes test`. `install.h#`/`notify.h#` (i `ffi.h#`, z którego korzystają)
+`bit test`. `install.h#`/`notify.h#` (i `ffi.h#`, z którego korzystają)
 wymagają realnie skompilowanej binarki.
 
 ## API
@@ -121,11 +127,11 @@ wartości jego argumentów:
 
 ```hsharp
 ;; openat(dirfd, path, flags, mode) — zezwól tylko na odczyt
-let conds: [seccomp::ArgCond] = [seccomp::masked_eq(2, 0x3, 0)]  ;; (flags & O_ACCMODE) == O_RDONLY
-let mut rules: [seccomp::CondRule] = []
-rules.push(seccomp::cond_rule(seccomp::number("openat"), seccomp::ACTION_ALLOW, conds))
-rules.push(seccomp::cond_rule(seccomp::number("openat"), seccomp::action_errno(seccomp::EACCES), []))
-seccomp::install_cond(rules, seccomp::ACTION_KILL_PROCESS)
+let conds: [comparators::ArgCond] = [comparators::masked_eq(2, 0x3, 0)]  ;; (flags & O_ACCMODE) == O_RDONLY
+let mut rules: [comparators::CondRule] = []
+rules.push(comparators::cond_rule(syscalls::number("openat"), ACTION_ALLOW, conds))
+rules.push(comparators::cond_rule(syscalls::number("openat"), consts::action_errno(EACCES), []))
+install::install_cond(rules, ACTION_KILL_PROCESS)
 ```
 
 | Funkcja | Warunek |
@@ -176,11 +182,11 @@ normalnie wymagające capability, jakich sandboksowany proces mieć nie
 powinien.
 
 ```hsharp
-let fd: int = seccomp::install_notify(rules, seccomp::ACTION_KILL_PROCESS, seccomp::ARCH_X86_64)
-let n: seccomp::Notif = seccomp::notif_receive(fd)      ;; blokuje do następnego zdarzenia
+let fd: int = notify::install_notify(rules, ACTION_KILL_PROCESS, ARCH_X86_64)
+let n: notify::Notif = notify::notif_receive(fd)      ;; blokuje do następnego zdarzenia
 ;; n.nr, n.pid, n.args[0..6] — zdecyduj...
-if seccomp::notif_id_valid(fd, n.id) is
-    seccomp::notif_respond(fd, n.id, 0, 0, 0)           ;; zezwól, syscall zwraca 0
+if notify::notif_id_valid(fd, n.id) is
+    notify::notif_respond(fd, n.id, 0, 0, 0)           ;; zezwól, syscall zwraca 0
 end
 ```
 
@@ -193,7 +199,7 @@ end
 | `close_notify(fd) -> bool` | zamknij fd powiadomień |
 
 Oznacz regułę do przekazania nadzorcy przez `ACTION_USER_NOTIF` zamiast
-zwykłej akcji (`Rule { nr: ..., action: seccomp::ACTION_USER_NOTIF }`).
+zwykłej akcji (`Rule { nr: ..., action: ACTION_USER_NOTIF }`).
 
 ### Eksport / import (`export.h#`)
 
