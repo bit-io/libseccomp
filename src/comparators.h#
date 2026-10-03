@@ -55,7 +55,7 @@ end
 ;; Convenience: lift a plain `Rule` (rules.h#) into a `CondRule` with no
 ;; conditions, for mixing into a `[CondRule]` list alongside real
 ;; argument-gated rules.
-pub fn rule_to_cond(r: Rule) -> CondRule is
+pub fn rule_to_cond(r: rules::Rule) -> CondRule is
     return CondRule { nr: r.nr, action: r.action, conditions: [] }
 end
 
@@ -72,47 +72,47 @@ end
 ;; Emit the unpacked instructions for one `ArgCond`, following ir.h#'s
 ;; convention: falling through the end of the returned block means the
 ;; condition held; taking the jump means it failed.
-fn emit_cond(c: ArgCond) -> [Instr] is
-    let mut out: [Instr] = []
+fn emit_cond(c: ArgCond) -> [ir::Instr] is
+    let mut out: [ir::Instr] = []
     if c.op == CMP_EQ is
         ;; full 64-bit equality: high word, then low word, both must match.
-        out.push(plain(OP_LD_W_ABS, arg_off_hi(c.arg_idx)))
-        out.push(cond(OP_JEQ_K, (c.value >> 32) & 0xFFFFFFFF))
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond(OP_JEQ_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_hi(c.arg_idx)))
+        out.push(ir::cond(OP_JEQ_K, (c.value >> 32) & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond(OP_JEQ_K, c.value & 0xFFFFFFFF))
         return out
     end
     if c.op == CMP_NE is
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond_inv(OP_JEQ_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond_inv(OP_JEQ_K, c.value & 0xFFFFFFFF))
         return out
     end
     if c.op == CMP_GT is
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond(OP_JGT_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond(OP_JGT_K, c.value & 0xFFFFFFFF))
         return out
     end
     if c.op == CMP_GE is
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond(OP_JGE_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond(OP_JGE_K, c.value & 0xFFFFFFFF))
         return out
     end
     if c.op == CMP_LT is
         ;; A < k  <=>  NOT(A >= k)
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond_inv(OP_JGE_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond_inv(OP_JGE_K, c.value & 0xFFFFFFFF))
         return out
     end
     if c.op == CMP_LE is
         ;; A <= k  <=>  NOT(A > k)
-        out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-        out.push(cond_inv(OP_JGT_K, c.value & 0xFFFFFFFF))
+        out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+        out.push(ir::cond_inv(OP_JGT_K, c.value & 0xFFFFFFFF))
         return out
     end
     ;; CMP_MASKED_EQ: (A & mask) == value
-    out.push(plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
-    out.push(plain(OP_ALU_AND_K, c.mask & 0xFFFFFFFF))
-    out.push(cond(OP_JEQ_K, c.value & 0xFFFFFFFF))
+    out.push(ir::plain(OP_LD_W_ABS, arg_off_lo(c.arg_idx)))
+    out.push(ir::plain(OP_ALU_AND_K, c.mask & 0xFFFFFFFF))
+    out.push(ir::cond(OP_JEQ_K, c.value & 0xFFFFFFFF))
     return out
 end
 
@@ -122,12 +122,12 @@ end
 ;; packed result can just be concatenated after any other rule's block
 ;; with no further adjustment.
 pub fn build_cond_rule_block(r: CondRule) -> [int] is
-    let mut blk: [Instr] = []
-    blk.push(plain(OP_LD_W_ABS, OFF_NR))
-    blk.push(cond(OP_JEQ_K, r.nr))
+    let mut blk: [ir::Instr] = []
+    blk.push(ir::plain(OP_LD_W_ABS, OFF_NR))
+    blk.push(ir::cond(OP_JEQ_K, r.nr))
     let mut ci: int = 0
     while ci < r.conditions.len() is
-        let parts: [Instr] = emit_cond(r.conditions[ci])
+        let parts: [ir::Instr] = emit_cond(r.conditions[ci])
         let mut cj: int = 0
         while cj < parts.len() is
             blk.push(parts[cj])
@@ -135,16 +135,16 @@ pub fn build_cond_rule_block(r: CondRule) -> [int] is
         end
         ci += 1
     end
-    blk.push(fixed(OP_RET_K, 0, 0, r.action))
-    return patch_and_pack(blk)
+    blk.push(ir::fixed(OP_RET_K, 0, 0, r.action))
+    return ir::patch_and_pack(blk)
 end
 
 ;; Same contract as `bpf::build_program`, but for `[CondRule]`.
 pub fn build_program_cond(rules: [CondRule], default_action: int, arch: int) -> [int] is
     let mut prog: [int] = []
-    prog.push(pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH))
-    prog.push(pack_instr(OP_JEQ_K,    1, 0, arch))
-    prog.push(pack_instr(OP_RET_K,    0, 0, ACTION_KILL_PROCESS))
+    prog.push(bpf::pack_instr(OP_LD_W_ABS, 0, 0, OFF_ARCH))
+    prog.push(bpf::pack_instr(OP_JEQ_K,    1, 0, arch))
+    prog.push(bpf::pack_instr(OP_RET_K,    0, 0, ACTION_KILL_PROCESS))
     let mut i: int = 0
     while i < rules.len() is
         let block: [int] = build_cond_rule_block(rules[i])
@@ -155,6 +155,6 @@ pub fn build_program_cond(rules: [CondRule], default_action: int, arch: int) -> 
         end
         i += 1
     end
-    prog.push(pack_instr(OP_RET_K, 0, 0, default_action))
+    prog.push(bpf::pack_instr(OP_RET_K, 0, 0, default_action))
     return prog
 end
